@@ -2,21 +2,35 @@
 
 > **Migrate data between any databases with AI-generated schema mapping and human-in-the-loop approval.**
 
-QueryVista is a comprehensive ETL (Extract, Transform, Load) platform that enables companies to migrate data between different database systems — SQL to NoSQL, NoSQL to SQL, or any combination. The platform uses **Azure OpenAI GPT-4o** to intelligently draft migration schemas, provides a **human-in-the-loop review** process, and executes migrations with full validation.
+QueryVista is a comprehensive ETL (Extract, Transform, Load) platform that enables migrating data between different database systems — SQL to NoSQL, NoSQL to SQL, or any combination. The platform uses **Azure OpenAI GPT-4o** to intelligently draft migration schemas, provides a **human-in-the-loop review** process, and executes migrations with full validation.
 
 ---
 
 ## 📋 Table of Contents
 
+- [Relevance](#relevance)
 - [Architecture Overview](#architecture-overview)
 - [Supported Migration Pipelines](#supported-migration-pipelines)
-- [Pipeline Details & Credentials](#pipeline-details--credentials)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Setup & Installation](#setup--installation)
 - [API Endpoints](#api-endpoints)
-- [Frontend Usage](#frontend-usage)
 - [User Journey](#user-journey)
+- [Testing](#testing)
+- [Security Notes & Known Limitations](#security-notes--known-limitations)
+- [Roadmap](#roadmap)
+
+---
+
+## Relevance
+
+This project applies engineering fundamentals to a genuinely hard data-systems problem — moving structured and semi-structured data safely between very different database paradigms:
+
+- **Object-Oriented Design** — a shared `base.py` pipeline class in `backend/pipelines/` standardizes the extract → plan → review → execute → validate flow across all 8 source/target combinations.
+- **Data Structures & Multi-DB Systems** — handles relational (MySQL, PostgreSQL) and document/NoSQL (MongoDB, CouchDB) schemas side by side: type mapping, nested-object flattening, JSON/JSONB handling, `_rev` conflict resolution, and ObjectId conversion.
+- **Generative AI APIs** — Azure OpenAI GPT-4o is used for structured schema-mapping generation, with a human-in-the-loop review/edit step before anything executes against real data — a safety-conscious pattern, not a fire-and-forget agent.
+- **Validation & Testing Mindset** — the architecture includes an explicit validation phase (source vs. target query comparison) as a first-class pipeline step, not an afterthought.
+- **Web Application Development** — FastAPI backend with a documented REST API contract, plus a lightweight HTML/CSS/JS frontend for driving the migration workflow end to end.
 
 ---
 
@@ -47,149 +61,22 @@ graph LR
 
 | # | Pipeline Name | Source DB | Target DB | Notebook/Script |
 |---|--------------|-----------|-----------|-----------------|
-| 1 | `mysql_to_couchdb` | MySQL | Apache CouchDB | `mysql_to_couchdb_pipeline (3) (1).ipynb` |
-| 2 | `postgres_to_couchdb` | PostgreSQL (Neon) | Apache CouchDB | `postgres_to_couchdb_pipeline (1).ipynb` |
-| 3 | `mysql_to_mongo` | MySQL | MongoDB Atlas | `mysql_to_mongo.ipynb` |
-| 4 | `postgres_to_mongo` | PostgreSQL (Neon) | MongoDB Atlas | `Query_vista.ipynb` / `query_vista_postgrestomongo.py` |
-| 5 | `couchdb_to_mysql` | Apache CouchDB | MySQL | `CouchDB-MySQL (1).ipynb` |
-| 6 | `couchdb_to_postgres` | Apache CouchDB | PostgreSQL | `CouchDB-PostgreSQL.ipynb` |
-| 7 | `mongo_to_mysql` | MongoDB Atlas | MySQL | `Mongo-Sql (1).ipynb` |
-| 8 | `mongo_to_couchdb` | MongoDB Atlas | Apache CouchDB | `Mongodb-COuchdb.ipynb` |
+| 1 | `mysql_to_couchdb` | MySQL | Apache CouchDB | `all_pipelinee/mysql_to_couchdb_pipeline.ipynb` |
+| 2 | `postgres_to_couchdb` | PostgreSQL (Neon) | Apache CouchDB | `all_pipelinee/postgres_to_couchdb_pipeline.ipynb` |
+| 3 | `mysql_to_mongo` | MySQL | MongoDB Atlas | `all_pipelinee/mysql_to_mongo.ipynb` |
+| 4 | `postgres_to_mongo` | PostgreSQL (Neon) | MongoDB Atlas | `all_pipelinee/Query_vista.ipynb` / `query_vista_postgrestomongo.py` |
+| 5 | `couchdb_to_mysql` | Apache CouchDB | MySQL | `all_pipelinee/CouchDB-MySQL.ipynb` |
+| 6 | `couchdb_to_postgres` | Apache CouchDB | PostgreSQL | `all_pipelinee/CouchDB-PostgreSQL.ipynb` |
+| 7 | `mongo_to_mysql` | MongoDB Atlas | MySQL | `all_pipelinee/Mongo-Sql.ipynb` |
+| 8 | `mongo_to_couchdb` | MongoDB Atlas | Apache CouchDB | `all_pipelinee/Mongodb-Couchdb.ipynb` |
 
----
+Each pipeline supports three migration modes where applicable: `REPLACE`, `APPEND`, `UPSERT`.
 
-## 🔐 Pipeline Details & Credentials
-
-### Pipeline 1: `mysql_to_couchdb`
-
-**Direction:** MySQL → Apache CouchDB
-
-| Credential | Value |
-|-----------|-------|
-| MySQL Host | `localhost` |
-| MySQL Port | `3310` (Docker mapped) |
-| MySQL User | `user1` |
-| MySQL Password | `pass123` |
-| MySQL Database | `testdb` |
-| MySQL URL | `mysql+pymysql://user1:pass123@localhost:3310/testdb` |
-| CouchDB Host | `http://localhost:5984` |
-| CouchDB User | `admin` |
-| CouchDB Password | `admin123` |
-| CouchDB Database | `migrated_db` (auto-created per table) |
-
-**Pipeline Steps:** CSV → MySQL → Schema Extract → AI Plan → Human Review → Migrate → Validate
-
----
-
-### Pipeline 2: `postgres_to_couchdb`
-
-**Direction:** PostgreSQL (Neon Cloud) → Apache CouchDB
-
-| Credential | Value |
-|-----------|-------|
-| PostgreSQL URL | Stored in `.env` as `DATABASE_URL` / `SQL_URL` (Neon or any Postgres) |
-| PostgreSQL Schema | `public` |
-| CouchDB Host | `http://localhost:5984` |
-| CouchDB User | `admin` |
-| CouchDB Password | `admin123` |
-
----
-
-### Pipeline 3: `mysql_to_mongo`
-
-**Direction:** MySQL → MongoDB Atlas
-
-| Credential | Value |
-|-----------|-------|
-| MySQL URL | `mysql+mysqlconnector://etl_user:etl_pass@localhost:3310/etl_db` |
-| MySQL Host | `localhost` |
-| MySQL Port | `3310` |
-| MySQL User | `etl_user` |
-| MySQL Password | `etl_pass` |
-| MySQL Database | `etl_db` |
-| MongoDB URL | Stored in `.env` as `MONGO_URL` |
-| MongoDB Database | `mysql_refined_migration` |
-
----
-
-### Pipeline 4: `postgres_to_mongo`
-
-**Direction:** PostgreSQL (Neon Cloud) → MongoDB Atlas
-
-| Credential | Value |
-|-----------|-------|
-| PostgreSQL URL | Stored in `.env` as `SQL_URL` / `SQL_URL_ALT` |
-| MongoDB URL | Stored in `.env` as `MONGO_URL` |
-| MongoDB Database | `migrated_db` |
-
----
-
-### Pipeline 5: `couchdb_to_mysql`
-
-**Direction:** Apache CouchDB → MySQL
-
-| Credential | Value |
-|-----------|-------|
-| CouchDB URL | `http://admin:password@localhost:5984` |
-| MySQL URL | `mysql+pymysql://user1:pass123@localhost:3310/testdb` |
-| Migration Modes | `REPLACE` / `APPEND` / `UPSERT` |
-
-**Features:** Auto MySQL version detection, JSON column support, VARCHAR safety guardrails
-
----
-
-### Pipeline 6: `couchdb_to_postgres`
-
-**Direction:** Apache CouchDB → PostgreSQL
-
-| Credential | Value |
-|-----------|-------|
-| CouchDB URL | `http://admin:password@localhost:5984` |
-| PostgreSQL URL | `postgresql+psycopg2://postgres:password@localhost:5432/migrated_db` |
-| Migration Modes | `REPLACE` / `APPEND` / `UPSERT` |
-
-**Features:** JSONB support, BYTEA for binary, TIMESTAMP for datetime, ON CONFLICT upsert
-
----
-
-### Pipeline 7: `mongo_to_mysql`
-
-**Direction:** MongoDB Atlas → MySQL
-
-| Credential | Value |
-|-----------|-------|
-| MongoDB URL | `mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/` |
-| MongoDB Database | Source database name |
-| MySQL URL | `mysql+pymysql://root:secret@localhost:3306/migrated_db` |
-| Migration Modes | `REPLACE` / `APPEND` / `UPSERT` |
-
-**Features:** ObjectId → string conversion, nested object flattening, JSON column auto-detection
-
----
-
-### Pipeline 8: `mongo_to_couchdb`
-
-**Direction:** MongoDB Atlas → Apache CouchDB
-
-| Credential | Value |
-|-----------|-------|
-| MongoDB URL | `mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/` |
-| MongoDB Database | Source database name |
-| CouchDB URL | `http://admin:password@localhost:5984` |
-| Migration Modes | `REPLACE` / `APPEND` / `UPSERT` |
-
-**Features:** REST API bulk inserts, _rev handling for upserts, doc_type tagging
-
----
-
-### Shared: Azure OpenAI Credentials
-
-| Credential | Value |
-|-----------|-------|
-| Azure Endpoint | `https://openai-04.openai.azure.com/` |
-| API Key | Stored in `.env` as `AZURE_API_KEY` |
-| API Version | `2024-12-01-preview` |
-| Deployment Name | `gpt-4o` |
+Notable per-pipeline handling:
+- **CouchDB ↔ MySQL** — automatic MySQL version detection, JSON column support, VARCHAR safety guardrails.
+- **CouchDB ↔ PostgreSQL** — JSONB support, BYTEA for binary data, TIMESTAMP mapping, `ON CONFLICT` upsert.
+- **MongoDB ↔ MySQL** — ObjectId → string conversion, nested-object flattening, JSON column auto-detection.
+- **MongoDB ↔ CouchDB** — REST API bulk inserts, `_rev` handling for upserts, `doc_type` tagging.
 
 ---
 
@@ -205,34 +92,33 @@ graph LR
 | **ORM** | SQLAlchemy |
 | **DB Drivers** | pymysql, psycopg2, pymongo, couchdb (python-couchdb) |
 | **Containerization** | Docker Compose (MySQL + CouchDB + phpMyAdmin) |
+| **Deployment** | Render (see `render.yaml`) |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-QueryVista_pipelines/
-├── .env                          # All database & API credentials
+MINI_PROJECT/
+├── .env.example                  # Template — copy to .env, fill in real values
 ├── .gitignore
-├── README.md                     # This file
-├── docker-compose.yml           # MySQL + CouchDB + phpMyAdmin containers
+├── README.md
+├── API_CONTRACT.md               # Full API request/response contract
+├── PROJECT_OVERVIEW.md
+├── docker-compose.yml            # MySQL + CouchDB + phpMyAdmin containers
+├── render.yaml                   # Render deployment config
+├── cli.py                        # Command-line entry point
 │
-├── all_pipelinee/               # All migration pipeline notebooks & scripts
-│   ├── mysql_to_couchdb_pipeline (3) (1).ipynb
-│   ├── postgres_to_couchdb_pipeline (1).ipynb
-│   ├── mysql_to_mongo.ipynb
-│   ├── Query_vista.ipynb                    # Postgres → Mongo
-│   ├── query_vista_postgrestomongo.py       # Postgres → Mongo (script)
-│   ├── CouchDB-MySQL (1).ipynb
-│   ├── CouchDB-PostgreSQL.ipynb
-│   ├── Mongo-Sql (1).ipynb                  # Mongo → MySQL
-│   └── Mongodb-COuchdb.ipynb
+├── all_pipelinee/                # Migration pipeline notebooks & scripts
+├── initial_migration/
+├── mysql_couch/                  # Docker setup for MySQL ↔ CouchDB
+├── postgres_couch/               # Postgres ↔ CouchDB pipeline assets
+├── sql/                          # SQL schema/setup scripts
 │
-├── backend/                     # FastAPI backend
-│   ├── main.py                  # FastAPI application
-│   ├── pipelines/               # Pipeline modules
-│   │   ├── __init__.py
-│   │   ├── base.py              # Base pipeline class
+├── backend/                      # FastAPI backend
+│   ├── main.py                   # FastAPI application
+│   ├── pipelines/
+│   │   ├── base.py               # Shared base pipeline class
 │   │   ├── mysql_to_mongo.py
 │   │   ├── mysql_to_couchdb.py
 │   │   ├── postgres_to_mongo.py
@@ -243,16 +129,12 @@ QueryVista_pipelines/
 │   │   └── couchdb_to_postgres.py
 │   └── requirements.txt
 │
-├── frontend/                    # Frontend UI
+├── frontend/
 │   ├── index.html
 │   ├── style.css
 │   └── app.js
 │
-├── mysql_couch/                 # Docker setup for MySQL ↔ CouchDB
-│   └── docker-compose.yml
-│
-└── postgres_couch/              # Postgres ↔ CouchDB pipeline copy
-    └── postgres_to_couchdb_pipeline (1).ipynb
+└── SQLAI/                        # Related sub-project (see its own README)
 ```
 
 ---
@@ -261,46 +143,62 @@ QueryVista_pipelines/
 
 ### Prerequisites
 - Python 3.10+
-- Docker & Docker Compose (for MySQL + CouchDB)
+- Docker & Docker Compose (for local MySQL + CouchDB)
 - MongoDB Atlas account (cloud)
 - PostgreSQL / Neon account (cloud)
 - Azure OpenAI API key
 
-### 1. Clone & Install Dependencies
-
+### 1. Clone & install dependencies
 ```bash
-cd QueryVista_pipelines
+git clone https://github.com/dhawalevitthal7/MINI_PROJECT.git
+cd MINI_PROJECT
 python -m venv venv
 venv\Scripts\activate        # Windows
 pip install -r backend/requirements.txt
 ```
 
-### 2. Start Docker Services
-
+### 2. Start Docker services
 ```bash
 cd mysql_couch
 docker-compose up -d
 ```
-
 This starts:
 - **MySQL** on port `3310`
 - **CouchDB** on port `5984` (Fauxton UI: http://localhost:5984/_utils)
 - **phpMyAdmin** on port `8081`
 
-### 3. Configure Environment Variables
+### 3. Configure environment variables
+```bash
+cp .env.example .env
+```
+Fill in `.env` with your own values — **never commit real credentials**:
+```env
+# MySQL
+MYSQL_URL=mysql+pymysql://<user>:<password>@localhost:3310/<database>
 
-Edit `.env` with your credentials (see Pipeline Details above).
+# PostgreSQL (Neon or any Postgres)
+DATABASE_URL=postgresql+psycopg2://<user>:<password>@<host>:5432/<database>
 
-### 4. Run the Backend
+# CouchDB
+COUCHDB_URL=http://<user>:<password>@localhost:5984
 
+# MongoDB Atlas
+MONGO_URL=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/
+
+# Azure OpenAI
+AZURE_ENDPOINT=https://<your-resource>.openai.azure.com/
+AZURE_API_KEY=<your_azure_api_key>
+AZURE_API_VERSION=2024-12-01-preview
+AZURE_DEPLOYMENT_NAME=gpt-4o
+```
+
+### 4. Run the backend
 ```bash
 cd backend
 uvicorn main:app --reload --port 8000
 ```
 
-### 5. Open the Frontend
-
-Open `frontend/index.html` in your browser, or serve it:
+### 5. Open the frontend
 ```bash
 cd frontend
 python -m http.server 3000
@@ -326,8 +224,9 @@ python -m http.server 3000
 | `GET` | `/api/migration-status/{id}` | Get migration progress/status |
 | `GET` | `/api/migration-history` | List past migrations |
 
-### Example: Test Connection
+Full request/response schemas are documented in [`API_CONTRACT.md`](./API_CONTRACT.md).
 
+### Example: Test connection
 ```bash
 curl -X POST http://localhost:8000/api/test-connection \
   -H "Content-Type: application/json" \
@@ -335,25 +234,13 @@ curl -X POST http://localhost:8000/api/test-connection \
     "db_type": "mysql",
     "host": "localhost",
     "port": 3310,
-    "user": "user1",
-    "password": "pass123",
-    "database": "testdb"
+    "user": "<user>",
+    "password": "<password>",
+    "database": "<database>"
   }'
 ```
 
-### Example: Extract Schema
-
-```bash
-curl -X POST http://localhost:8000/api/extract-schema \
-  -H "Content-Type: application/json" \
-  -d '{
-    "db_type": "mysql",
-    "connection_url": "mysql+pymysql://user1:pass123@localhost:3310/testdb"
-  }'
-```
-
-### Example: Generate Migration Plan
-
+### Example: Generate migration plan
 ```bash
 curl -X POST http://localhost:8000/api/generate-plan \
   -H "Content-Type: application/json" \
@@ -368,13 +255,44 @@ curl -X POST http://localhost:8000/api/generate-plan \
 
 ## 🎯 User Journey
 
-1. **Select Source & Target** — User picks which database to migrate FROM and TO
-2. **Connect** — Enter/use hardcoded credentials, test connection
-3. **Extract Schema** — System reads source DB schema
-4. **AI Plans Migration** — GPT-4o generates a JSON migration blueprint
-5. **Human Reviews** — User can modify field mappings, embeddings, drops
-6. **Approve & Execute** — Migration runs with progress tracking
-7. **Validate** — Side-by-side query comparison of source vs target
+1. **Select Source & Target** — pick which database to migrate FROM and TO.
+2. **Connect** — enter credentials, test connection.
+3. **Extract Schema** — system reads the source DB schema.
+4. **AI Plans Migration** — GPT-4o generates a JSON migration blueprint.
+5. **Human Reviews** — user can modify field mappings, embeddings, drops before anything runs.
+6. **Approve & Execute** — migration runs with progress tracking.
+7. **Validate** — side-by-side query comparison of source vs. target confirms the migration.
+
+---
+
+## Testing
+
+No automated test suite currently exists beyond manual notebook runs per pipeline. Suggested next steps, particularly relevant for a QA/test-development context:
+
+- Unit tests per `backend/pipelines/*.py` module — type-mapping correctness (e.g. ObjectId → string, JSONB round-trips) using small fixture datasets, not live cloud databases.
+- Contract tests against `API_CONTRACT.md` to catch backend/frontend drift.
+- A dry-run/validation-only mode that runs Phase 1 (Discovery) + Phase 2 (AI Plan) without ever touching Phase 4 (Execution) — useful both as a safe test harness and as a user-facing "preview" feature.
+- Regression tests for the `REPLACE` / `APPEND` / `UPSERT` modes against edge cases (duplicate keys, schema drift between runs).
+
+---
+
+## Security Notes & Known Limitations
+
+- **Never commit real credentials.** Earlier versions of this README included plaintext database passwords and connection strings for local/dev services — these have been removed and replaced with `.env` placeholders. If any of those values were ever reused for real cloud resources (MongoDB Atlas, Neon, Azure), rotate them.
+- **No connection-string sanitization documented** for logs/error messages — worth confirming the backend doesn't leak full connection URLs (including credentials) in error responses or logs.
+- **No authentication on the API** — `backend/main.py` endpoints appear open; fine for local/demo use, not for a shared deployment as-is.
+- **AI-generated migration plans are not validated against a schema/type system before human review** — worth adding a validation pass so obviously malformed plans (e.g. type mismatches) are caught before a human has to catch them manually.
+- **Docker default credentials** (`docker-compose.yml`) are fine for local development but should never be the values used in any shared or deployed environment.
+
+---
+
+## Roadmap
+
+- [ ] Automated test suite (unit + contract tests, dry-run validation mode)
+- [ ] API authentication / API-key middleware
+- [ ] Connection-string redaction in logs and error responses
+- [ ] Schema/type validation pass on AI-generated plans before human review
+- [ ] Migration rollback support
 
 ---
 
