@@ -1,47 +1,65 @@
 """
-AI Service — Azure OpenAI Integration
+AI Service — OpenAI-compatible LLM integration (NVIDIA API by default)
 Handles all LLM calls for query generation, schema analysis, and visualization.
 """
 
 import json
 import os
-from openai import AzureOpenAI
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 
+def build_sql_prompt(dialect: str, schema_str: str, safe_mode: bool) -> str:
+    """NL→SQL system prompt for /generate and /generate-dual. Also used by benchmark/run_benchmark.py."""
+    mode_instructions = "STRICTLY READ-ONLY. SELECT only." if safe_mode else "UNRESTRICTED MODE."
+    return f"""You are a {dialect.upper()} SQL Expert.
+Schema: {schema_str}
+MODE: {mode_instructions}
+Rules:
+- Return strictly raw SQL. No markdown, no explanation.
+- Handle date comparisons using dialect-specific functions.
+- For {dialect.upper()} syntax only.
+"""
+
+
 class AIService:
     def __init__(self):
-        self.client = AzureOpenAI(
-            azure_endpoint=os.getenv("AZURE_ENDPOINT", ""),
-            api_key=os.getenv("AZURE_API_KEY", ""),
-            api_version=os.getenv("AZURE_API_VERSION", "2024-12-01-preview"),
+        self.client = OpenAI(
+            base_url=os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+            api_key=os.getenv("NVIDIA_API_KEY", ""),
+            timeout=float(os.getenv("AI_TIMEOUT_SECONDS", "120")),
         )
-        self.model_name = os.getenv("DEPLOYMENT_NAME", "gpt-4o")
+        self.model_name = os.getenv("LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+
+    def complete(self, system_instruction: str, user_content: str) -> str:
+        """Chat completion with code fences stripped. Raises on API errors."""
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.2,
+            top_p=1,
+            max_tokens=4096,
+        )
+        text = (response.choices[0].message.content or "").strip()
+        # Strip markdown code fences if present
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+        return text
 
     def ai_call(self, system_instruction: str, user_content: str) -> str:
-        """Generic Azure OpenAI chat completion call."""
+        """Like complete(), but returns "" on API errors."""
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": user_content},
-                ],
-                temperature=0.2,
-                max_tokens=4096,
-            )
-            text = response.choices[0].message.content.strip()
-            # Strip markdown code fences if present
-            if text.startswith("```"):
-                text = text.split("\n", 1)[-1] if "\n" in text else text[3:]
-                if text.endswith("```"):
-                    text = text[:-3]
-                text = text.strip()
-            return text
+            return self.complete(system_instruction, user_content)
         except Exception as e:
-            print(f"[ERROR] Azure OpenAI API Error: {str(e)}")
+            print(f"[ERROR] LLM API Error: {str(e)}")
             return ""
 
     # Alias for backward compatibility

@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description"
+    content="AskGraph — ask a database a question in plain English. Generates SQL, runs it, charts the result. PostgreSQL, MySQL, Oracle.">
+  <title>AskGraph</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+  <link rel="stylesheet" href="static/styles.css">
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23151719'/><rect x='5' y='7' width='4' height='18' fill='%235B6ABF'/><rect x='13' y='13' width='4' height='12' fill='%23E6E4DF'/><rect x='21' y='10' width='4' height='15' fill='%23E6E4DF'/></svg>">
+</head>
+
+<body>
+  <!-- Signature: dialect stripe. Colour = connected DB. Hatched = Safe Mode off. -->
+  <div class="dialect-stripe" aria-hidden="true"></div>
+
+  <div class="app-layout">
+
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
+      <div class="sidebar-brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="6" width="3.5" height="15" fill="currentColor" />
+            <rect x="10.25" y="11" width="3.5" height="10" fill="currentColor" opacity=".55" />
+            <rect x="17.5" y="8" width="3.5" height="13" fill="currentColor" opacity=".8" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>AskGraph</h1>
+          <span>Ask. Get SQL.</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-label">Main</div>
+
+        <a class="nav-item active" data-page="connect" role="button" tabindex="0" aria-label="Connect a database"
+          id="nav-connect">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35">
+              <ellipse cx="10" cy="5" rx="6.25" ry="2.5" />
+              <path d="M3.75 5v10c0 1.38 2.8 2.5 6.25 2.5s6.25-1.12 6.25-2.5V5" />
+              <path d="M3.75 10c0 1.38 2.8 2.5 6.25 2.5s6.25-1.12 6.25-2.5" />
+            </svg>
+          </span>
+          <span class="nav-label">Connect</span>
+        </a>
+
+        <a class="nav-item" data-page="schema" role="button" tabindex="0" aria-label="Schema explorer" id="nav-schema">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35">
+              <rect x="2.75" y="2.75" width="6" height="6" fill="currentColor" stroke="none" />
+              <rect x="11.25" y="2.75" width="6" height="6" />
+              <rect x="2.75" y="11.25" width="6" height="6" />
+              <rect x="11.25" y="11.25" width="6" height="6" />
+            </svg>
+          </span>
+          <span class="nav-label">Schema</span>
+        </a>
+
+        <a class="nav-item" data-page="query" role="button" tabindex="0" aria-label="Ask a question" id="nav-query">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square">
+              <path d="M4 5.5 8.5 10 4 14.5" />
+              <path d="M10.5 15.25h5.5" />
+            </svg>
+          </span>
+          <span class="nav-label">Ask</span>
+        </a>
+
+        <div class="nav-section-label">Analysis</div>
+
+        <a class="nav-item" data-page="dashboard" role="button" tabindex="0" aria-label="Auto dashboard"
+          id="nav-dashboard">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35">
+              <path d="M2.5 17.25h15" />
+              <path d="M5.5 17V9.5M10 17V3.75M14.5 17v-5.5" stroke-width="2.2" />
+            </svg>
+          </span>
+          <span class="nav-label">Dashboard</span>
+        </a>
+
+        <a class="nav-item" data-page="health" role="button" tabindex="0" aria-label="Data health check"
+          id="nav-health">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35">
+              <path d="M10 17.25S3.25 13.5 3.25 8.5a3.75 3.75 0 0 1 6.75-2.25A3.75 3.75 0 0 1 16.75 8.5c0 5-6.75 8.75-6.75 8.75Z" />
+              <path d="M5.5 9.75h2.25L9 7.5l1.75 4.25L12 9.75h2.5" stroke-width="1.6" />
+            </svg>
+          </span>
+          <span class="nav-label">Health</span>
+        </a>
+
+        <a class="nav-item" data-page="optimizer" role="button" tabindex="0" aria-label="SQL optimizer"
+          id="nav-optimizer">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35">
+              <path d="M2.75 14.5a7.5 7.5 0 0 1 14.5 0" />
+              <path d="M10 14.5 14 8.5" stroke-width="1.8" stroke-linecap="square" />
+            </svg>
+          </span>
+          <span class="nav-label">Optimizer</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Collapse sidebar">
+          <span id="toggleIcon">◀</span>
+          <span class="nav-label">Collapse</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Mobile overlay -->
+    <div class="mobile-overlay" id="mobileOverlay"></div>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main class="main-content">
+
+      <!-- Header -->
+      <header class="header">
+        <div class="header-left">
+          <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 6h14M3 10h14M3 14h14" />
+            </svg>
+          </button>
+          <h2 class="header-title" id="headerTitle">Connect a database</h2>
+        </div>
+        <div class="header-right">
+          <span class="dialect-badge hidden" id="dialectBadge"></span>
+          <span class="status-chip disconnected" id="statusChip">
+            <span class="status-dot"></span>
+            <span id="statusText">Disconnected</span>
+          </span>
+          <div class="safe-mode-toggle">
+            <span>Safe mode</span>
+            <div class="toggle-switch active" id="safeModeToggle" role="switch" aria-checked="true"
+              aria-label="Safe mode: only SELECT statements run" tabindex="0"></div>
+          </div>
+          <button class="theme-btn" id="themeToggle" aria-label="Switch theme">DARK</button>
+        </div>
+      </header>
+
+      <!-- Page Area -->
+      <div class="page-area">
+
+        <!-- ===== CONNECT PAGE ===== -->
+        <section class="page active" id="page-connect" role="main" aria-label="Database connection">
+          <div class="connect-page">
+            <div class="card connect-card card-flat">
+                <h3>Point AskGraph at a database</h3>
+              <p>Paste a connection string, or pick one of the saved Neon databases. AskGraph reads the schema once and
+                caches it.</p>
+
+              <div class="connect-form">
+                <div class="input-group">
+                  <label for="dbUrlInput">Connection URL</label>
+                  <div class="url-row">
+                    <select id="dbSelect" class="input-field" aria-label="Saved databases">
+                      <option value="">Saved…</option>
+                    </select>
+                    <input type="text" class="input-field mono" id="dbUrlInput"
+                      placeholder="postgresql://user:pass@host:5432/dbname" aria-label="Database connection URL"
+                      autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+
+                <button class="btn btn-primary w-full" id="connectBtn">Connect</button>
+
+                <div class="connection-presets">
+                  <span class="presets-label">Start from</span>
+                  <button class="preset-btn" data-preset="postgresql://">PostgreSQL</button>
+                  <button class="preset-btn" data-preset="mysql://">MySQL</button>
+                  <button class="preset-btn" data-preset="oracle://">Oracle</button>
+                </div>
+
+                <div class="sample-connection">
+                  <p>No database handy? Try the sample UK online retail database — 541k orders, 4k customers, ready to query.</p>
+                  <button class="btn btn-primary btn-sm" id="sampleDbBtn" type="button">Use sample database</button>
+                </div>
+              </div>
+
+              <div class="connecting-animation" id="connectingAnim" aria-live="polite">
+                <div class="spinner"></div>
+                <span class="connecting-text">Reading schema…</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== SCHEMA EXPLORER PAGE ===== -->
+        <section class="page" id="page-schema" role="main" aria-label="Schema explorer">
+          <div class="page-header">
+            <h2>Tables and rows</h2>
+            <p>Everything AskGraph read from the connected database.</p>
+          </div>
+          <div id="schemaContent">
+            <div class="empty-state" id="schemaEmpty">
+              <div class="empty-icon"></div>
+              <h3>No database connected</h3>
+              <p>Connect a database to browse its tables.</p>
+            </div>
+
+            <div class="schema-grid hidden" id="schemaGrid">
+              <div class="card card-flat">
+                <h4 class="panel-label">Tables</h4>
+                <div class="schema-sidebar-list" id="schemaTablesList"></div>
+              </div>
+              <div class="card card-flat schema-detail-view" id="schemaDetailView">
+                <div class="empty-state">
+                  <div class="empty-icon"></div>
+                  <h3>Select a table</h3>
+                  <p>Pick a table from the list to see its columns and rows.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Skeleton loader for schema -->
+            <div class="hidden" id="schemaSkeleton">
+              <div class="schema-grid">
+                <div class="card card-flat">
+                  <div class="skeleton skeleton-text" style="width:60%"></div>
+                  <div class="skeleton skeleton-text" style="margin-top:16px"></div>
+                  <div class="skeleton skeleton-text"></div>
+                  <div class="skeleton skeleton-text"></div>
+                  <div class="skeleton skeleton-text" style="width:70%"></div>
+                  <div class="skeleton skeleton-text"></div>
+                  <div class="skeleton skeleton-text" style="width:50%"></div>
+                </div>
+                <div class="card card-flat">
+                  <div class="skeleton skeleton-block"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== AI QUERY PAGE ===== -->
+        <section class="page" id="page-query" role="main" aria-label="Ask a question">
+          <div class="ai-query-input-area">
+            <div class="ai-input-wrapper">
+              <textarea class="ai-input" id="aiQueryInput"
+                placeholder="Which ten customers spent the most this year?" rows="2"
+                aria-label="Your question"></textarea>
+              <button class="ai-send-btn" id="aiSendBtn" aria-label="Run question">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square">
+                  <path d="M4 10h11" />
+                  <path d="M10.5 5.5 15 10l-4.5 4.5" />
+                </svg>
+              </button>
+            </div>
+            <p class="input-hint">Enter to run · Shift + Enter for a new line</p>
+          </div>
+
+          <!-- AI Thinking state -->
+          <div class="ai-thinking" id="aiThinking" aria-live="polite">
+            <div class="thinking-dots">
+              <span></span><span></span><span></span>
+            </div>
+            <span class="thinking-text">Writing SQL…</span>
+            <span class="retry-indicator hidden" id="retryIndicator">Self-healed · attempt 02</span>
+          </div>
+
+          <!-- Results Area -->
+          <div class="results-area hidden" id="resultsArea">
+
+            <!-- Generated SQL — the moment prose becomes code -->
+            <div class="card card-flat mb-lg" id="sqlResultCard">
+              <div class="section-bar">
+                <h4 class="panel-label">SQL</h4>
+                <button class="btn btn-ghost btn-sm" id="copySqlBtn">Copy</button>
+              </div>
+              <div class="sql-block">
+                <pre id="sqlOutput"></pre>
+              </div>
+            </div>
+
+            <!-- Tabs for results -->
+            <div class="tabs" role="tablist" aria-label="Result views">
+              <button class="tab-btn active" data-tab="table-tab" role="tab" aria-selected="true"
+                aria-controls="table-tab">Rows</button>
+              <button class="tab-btn" data-tab="charts-tab" role="tab" aria-selected="false"
+                aria-controls="charts-tab">Charts</button>
+              <button class="tab-btn" data-tab="csv-tab" role="tab" aria-selected="false"
+                aria-controls="csv-tab">CSV</button>
+            </div>
+
+            <!-- Tab: Table -->
+            <div class="tab-content active" id="table-tab" role="tabpanel">
+              <div class="data-table-wrapper" id="dataTableWrapper">
+                <table class="data-table" id="dataTable" aria-label="Query results"></table>
+              </div>
+            </div>
+
+            <!-- Tab: Charts -->
+            <div class="tab-content" id="charts-tab" role="tabpanel">
+              <div class="charts-grid" id="chartsGrid"></div>
+              <div class="empty-state hidden" id="chartsEmpty">
+                <div class="empty-icon"></div>
+                <h3>No charts for this result</h3>
+                <p>This shape of data didn't produce a chart. The rows are still in the Rows tab.</p>
+              </div>
+            </div>
+
+            <!-- Tab: CSV -->
+            <div class="tab-content" id="csv-tab" role="tabpanel">
+              <div class="section-bar mb-lg">
+                <button class="btn btn-success" id="downloadCsvBtn">Download CSV</button>
+                <span class="csv-info" id="csvInfo"></span>
+              </div>
+              <div class="sql-block">
+                <pre id="csvPreview" class="csv-preview"></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Response message -->
+          <div class="hidden" id="responseMessage">
+            <div class="card card-flat note-card">
+              <p id="responseMessageText"></p>
+            </div>
+          </div>
+
+          <!-- Query History -->
+          <div class="history-panel" id="historyPanel">
+            <h4 class="panel-label">Recent questions</h4>
+            <div class="history-list" id="historyList">
+              <div class="empty-state empty-state-sm">
+                <p>Nothing asked yet.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== AUTO DASHBOARD PAGE ===== -->
+        <section class="page" id="page-dashboard" role="main" aria-label="Auto dashboard">
+          <div class="page-header page-header-split">
+            <div>
+              <h2>Five things worth knowing</h2>
+              <p>AskGraph picks the insights, writes the queries, and draws the charts.</p>
+            </div>
+            <div class="page-header-actions">
+              <button class="btn btn-ghost" id="downloadAllBtn" disabled>Download all</button>
+              <button class="btn btn-primary" id="genDashboardBtn">Generate dashboard</button>
+            </div>
+          </div>
+
+          <div id="dashboardContent">
+            <div class="empty-state" id="dashboardEmpty">
+              <div class="empty-icon"></div>
+              <h3>Nothing generated yet</h3>
+              <p>Connect a database, then generate a dashboard.</p>
+            </div>
+
+            <!-- Dashboard skeleton -->
+            <div class="hidden" id="dashboardSkeleton">
+              <div class="dashboard-grid">
+                <div class="card card-flat">
+                  <div class="skeleton skeleton-text" style="width:60%"></div>
+                  <div class="skeleton skeleton-block" style="margin-top:12px"></div>
+                </div>
+                <div class="card card-flat">
+                  <div class="skeleton skeleton-text" style="width:50%"></div>
+                  <div class="skeleton skeleton-block" style="margin-top:12px"></div>
+                </div>
+                <div class="card card-flat">
+                  <div class="skeleton skeleton-text" style="width:70%"></div>
+                  <div class="skeleton skeleton-block" style="margin-top:12px"></div>
+                </div>
+                <div class="card card-flat">
+                  <div class="skeleton skeleton-text" style="width:45%"></div>
+                  <div class="skeleton skeleton-block" style="margin-top:12px"></div>
+                </div>
+                <div class="card card-flat">
+                  <div class="skeleton skeleton-text" style="width:55%"></div>
+                  <div class="skeleton skeleton-block" style="margin-top:12px"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="dashboard-grid hidden" id="dashboardGrid"></div>
+          </div>
+        </section>
+
+        <!-- ===== DATA HEALTH PAGE ===== -->
+        <section class="page" id="page-health" role="main" aria-label="Data health check">
+          <div class="page-header page-header-split">
+            <div>
+              <h2>What's wrong with your data</h2>
+              <p>Nulls, orphaned references, duplicate keys, impossible dates. No question needed.</p>
+            </div>
+            <button class="btn btn-primary" id="runHealthBtn">Run check</button>
+          </div>
+
+          <div id="healthContent">
+            <div class="empty-state" id="healthEmpty">
+              <div class="empty-icon"></div>
+              <h3>Nothing checked yet</h3>
+              <p>Connect a database, then run the check.</p>
+            </div>
+
+            <div class="hidden" id="healthSkeleton">
+              <div class="card card-flat">
+                <div class="skeleton skeleton-text" style="width:35%"></div>
+                <div class="skeleton" style="height:6px;margin-top:10px;"></div>
+              </div>
+              <div class="card card-flat mt-lg">
+                <div class="skeleton skeleton-text"></div>
+                <div class="skeleton skeleton-text"></div>
+                <div class="skeleton skeleton-text" style="width:65%"></div>
+              </div>
+            </div>
+
+            <div class="hidden" id="healthResults">
+              <div class="card card-flat health-score-card">
+                <div class="health-score" id="healthScore">100</div>
+                <div class="health-score-meta">
+                  <h4 id="healthVerdict">Clean</h4>
+                  <p id="healthSummary"></p>
+                  <div class="health-score-bar"><div class="health-score-fill" id="healthScoreFill"></div></div>
+                </div>
+              </div>
+
+              <div class="health-filters" id="healthFilters" role="group" aria-label="Filter by severity">
+                <button class="chip chip-active" data-severity="all">All</button>
+                <button class="chip" data-severity="high">High</button>
+                <button class="chip" data-severity="medium">Medium</button>
+                <button class="chip" data-severity="low">Low</button>
+              </div>
+
+              <div class="health-list" id="healthList"></div>
+              <div class="health-skipped hidden" id="healthSkipped"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== SQL OPTIMIZER PAGE ===== -->
+        <section class="page" id="page-optimizer" role="main" aria-label="SQL optimizer">
+          <div class="page-header">
+            <h2>Rewrite a query</h2>
+            <p>Paste SQL. AskGraph rewrites it and explains what changed.</p>
+          </div>
+
+          <div class="card card-flat mb-lg">
+            <div class="section-bar">
+              <h4 class="panel-label">Your query</h4>
+              <button class="btn btn-primary btn-sm" id="optimizeBtn">Optimize</button>
+            </div>
+            <textarea class="editor-area" id="optimizerInput"
+              placeholder="SELECT * FROM users WHERE created_at > '2024-01-01'"
+              aria-label="SQL query to optimize"></textarea>
+          </div>
+
+          <!-- Optimizer Results -->
+          <div class="hidden" id="optimizerResults">
+            <div class="perf-score-container">
+              <div class="perf-score-label">
+                <span>How much changed</span>
+                <span id="perfScoreValue">0%</span>
+              </div>
+              <div class="perf-score-bar">
+                <div class="perf-score-fill" id="perfScoreFill" style="width:0%"></div>
+              </div>
+            </div>
+
+            <div class="optimizer-layout">
+              <div class="optimizer-panel">
+                <h4 class="panel-label">Before</h4>
+                <div class="sql-block">
+                  <pre id="origQueryDisplay"></pre>
+                </div>
+              </div>
+              <div class="optimizer-panel">
+                <h4 class="panel-label">After
+                  <button class="btn btn-ghost btn-sm" id="copyOptimizedBtn">Copy</button>
+                </h4>
+                <div class="sql-block">
+                  <pre id="optQueryDisplay"></pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="explanation-panel">
+              <h4 class="panel-label">What changed</h4>
+              <div class="explanation-content" id="explanationContent"></div>
+            </div>
+          </div>
+
+          <!-- Optimizer skeleton -->
+          <div class="hidden" id="optimizerSkeleton">
+            <div class="perf-score-container">
+              <div class="skeleton skeleton-text" style="width:30%"></div>
+              <div class="skeleton" style="height:6px;margin-top:10px;"></div>
+            </div>
+            <div class="optimizer-layout mt-lg">
+              <div class="card card-flat">
+                <div class="skeleton skeleton-block"></div>
+              </div>
+              <div class="card card-flat">
+                <div class="skeleton skeleton-block"></div>
+              </div>
+            </div>
+            <div class="card card-flat mt-lg">
+              <div class="skeleton skeleton-text"></div>
+              <div class="skeleton skeleton-text"></div>
+              <div class="skeleton skeleton-text" style="width:70%"></div>
+            </div>
+          </div>
+        </section>
+
+      </div> <!-- /page-area -->
+    </main>
+  </div> <!-- /app-layout -->
+
+  <!-- ===== CHART FULLSCREEN MODAL ===== -->
+  <div class="modal-overlay" id="chartModal" aria-hidden="true" role="dialog" aria-label="Chart, full size">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="chartModalTitle">Chart</h3>
+        <div class="modal-actions">
+          <button class="btn btn-ghost btn-sm" id="chartNewTabBtn">Open in new tab</button>
+          <button class="modal-close" id="chartModalClose" aria-label="Close">✕</button>
+        </div>
+      </div>
+      <div id="chartModalBody">
+        <img id="chartModalImg" src="" alt="Chart">
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST CONTAINER ===== -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+  <script src="static/app.js"></script>
+</body>
+
+</html>

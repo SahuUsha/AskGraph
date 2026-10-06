@@ -1,0 +1,34 @@
+.env
+.env.*
+.git
+.gitignore
+.cursor
+venv
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.md
+.DS_Store
+Thumbs.db
+*.egg-info
+.pytest_cache
+.mypy_cache
+.idea
+.vscode
+
+# Tests and archives don't belong in the runtime image.
+tests/
+docs/
+Archive.zip
+
+# Deleted in the restructure. The VPS sync uses rm:false, so these linger in
+# /opt/askgraph after deploy — keep them out of the image regardless.
+app.py
+app1.py
+app2.py
+copy_of_postgres.py
+test_db_connection.py
+test_backend.py

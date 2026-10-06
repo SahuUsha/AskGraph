@@ -5,7 +5,7 @@ import subprocess
 import traceback
 from typing import Dict, Any
 
-from .base import get_ai_client, get_pipeline_logger, DEPLOYMENT
+from .base import get_ai_client, get_pipeline_logger, MODEL
 
 logger = get_pipeline_logger("DynamicExecutor")
 
@@ -54,13 +54,14 @@ REQUIREMENTS:
     messages = [{"role": "system", "content": system_prompt}]
 
     response = client.chat.completions.create(
-        model=DEPLOYMENT,
+        model=MODEL,
         messages=messages,
         temperature=0.1,
+        top_p=1,
         max_tokens=4000,
     )
 
-    code = response.choices[0].message.content.strip()
+    code = (response.choices[0].message.content or "").strip()
     if code.startswith("```"):
         import re
         code = re.sub(r"^```(?:python)?\s*", "", code)

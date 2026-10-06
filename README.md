@@ -134,8 +134,21 @@ MINI_PROJECT/
 │   ├── style.css
 │   └── app.js
 │
-└── SQLAI/                        # Related sub-project (see its own README)
+├── SQLAI/                        # Dual-DB AI agent + migration UI (see its own README)
+│
+└── AskGraph/                     # NL→SQL analytics app, mounted by SQLAI at /askgraph
 ```
+
+### AskGraph
+
+[`AskGraph/`](./AskGraph/README.md) adds parser-enforced read-only SQL, a
+streaming auto-dashboard with zip export, an AI-free data health check, and a
+Gemini / Azure OpenAI switch. `SQLAI/app2.py` mounts it, so running SQLAI also
+serves it at `http://localhost:8000/askgraph/` (linked from the SQLAI sidebar).
+It reuses `CACHE_DB_URL` and the existing Gemini/Azure variables from `.env`;
+if no AI credentials are configured it is skipped with a warning and SQLAI
+runs as before. It can also run on its own:
+`cd AskGraph && uvicorn app.main:app --port 8001`.
 
 ---
 

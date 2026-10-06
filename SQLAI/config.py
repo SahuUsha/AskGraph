@@ -5,10 +5,9 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 
 class Settings:
-    AZURE_ENDPOINT = os.getenv("AZURE_ENDPOINT", "")
-    AZURE_API_KEY = os.getenv("AZURE_API_KEY", "")
-    AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
-    DEPLOYMENT_NAME = os.getenv("DEPLOYMENT_NAME", "gpt-4o")
+    NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
+    LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    LLM_MODEL = os.getenv("LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
     # Set CACHE_DB_URL in a repo-root `.env` file (never commit credentials).
     CACHE_DB_URL = os.getenv("CACHE_DB_URL", "")
 

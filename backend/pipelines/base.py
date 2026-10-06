@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from openai import AzureOpenAI
+from openai import OpenAI
 from sqlalchemy import create_engine, inspect, text
 import pymongo
 import httpx
@@ -38,20 +38,20 @@ logger = get_pipeline_logger("Base")
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
-# ─── Azure OpenAI client ─────────────────────────────────────────────────────
-_azure_client: Optional[AzureOpenAI] = None
+# ─── LLM client (OpenAI-compatible; NVIDIA API by default) ───────────────────
+_ai_client: Optional[OpenAI] = None
 
-def get_ai_client() -> AzureOpenAI:
-    global _azure_client
-    if _azure_client is None:
-        _azure_client = AzureOpenAI(
-            azure_endpoint=os.getenv("AZURE_ENDPOINT", ""),
-            api_key=os.getenv("AZURE_API_KEY", ""),
-            api_version=os.getenv("AZURE_API_VERSION", "2024-12-01-preview"),
+def get_ai_client() -> OpenAI:
+    global _ai_client
+    if _ai_client is None:
+        _ai_client = OpenAI(
+            base_url=os.getenv("LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+            api_key=os.getenv("NVIDIA_API_KEY", ""),
+            timeout=float(os.getenv("AI_TIMEOUT_SECONDS", "120")),
         )
-    return _azure_client
+    return _ai_client
 
-DEPLOYMENT = os.getenv("DEPLOYMENT_NAME", "gpt-4o")
+MODEL = os.getenv("LLM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 
 
 # ─── JSON serialization helpers ──────────────────────────────────────────────
@@ -252,13 +252,14 @@ Return ONLY valid JSON. No markdown, no explanation.
         })
 
     response = client.chat.completions.create(
-        model=DEPLOYMENT,
+        model=MODEL,
         messages=messages,
         temperature=0.2,
+        top_p=1,
         max_tokens=4096,
     )
 
-    raw = response.choices[0].message.content.strip()
+    raw = (response.choices[0].message.content or "").strip()
 
     # Try to parse JSON from the response
     # Strip markdown fences if present

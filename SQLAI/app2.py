@@ -17,7 +17,7 @@ from datetime import datetime
 
 import pandas as pd
 from typing import List, Optional, Dict, Any
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -37,7 +37,7 @@ from models import (
 from database_manager import DatabaseManager
 from nosql_manager import MongoDBManager, CouchDBManager
 from cache_manager import CacheManager
-from ai_service import AIService
+from ai_service import AIService, build_sql_prompt
 from viz_service import VizService
 from utils import get_hash, get_dialect_name, is_sql_db, is_nosql_db, get_query_language
 
@@ -87,13 +87,32 @@ cache_manager = CacheManager(cache_db_url=CACHE_DB_URL)
 db_manager = DatabaseManager()
 
 
+def _load_askgraph():
+    """Import the AskGraph app (../AskGraph), or None if it isn't configured."""
+    # Imported as AskGraph.app because SQLAI/app.py would shadow a bare `app` package.
+    sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+    try:
+        from AskGraph.app.main import app as askgraph
+        return askgraph
+    except Exception as e:
+        print(f"[WARN] AskGraph not mounted at /askgraph: {e}")
+        return None
+
+
+askgraph_app = _load_askgraph()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         cache_manager.init_cache_db()
     except Exception as e:
         print(f"[WARN] Cache init skipped: {e}")
-    yield
+    # Starlette doesn't run lifespans of mounted sub-apps, so run AskGraph's here.
+    async with AsyncExitStack() as stack:
+        if askgraph_app:
+            await stack.enter_async_context(askgraph_app.router.lifespan_context(askgraph_app))
+        yield
 
 
 app = FastAPI(title="QueryVista SQLAI — Dual-DB Agent", lifespan=lifespan)
@@ -117,6 +136,9 @@ def serve_frontend():
 
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+if askgraph_app:
+    app.mount("/askgraph", askgraph_app, name="askgraph")
 
 
 # ─── Helper: Get schema string for any DB type ──────────────────────────────
@@ -363,14 +385,7 @@ def _generate_and_execute_for_db(
     mode_instructions = "STRICTLY READ-ONLY. No mutations." if safe_mode else "UNRESTRICTED MODE."
 
     if is_sql_db(dialect):
-        system_prompt = f"""You are a {dialect.upper()} SQL Expert.
-Schema: {schema_str}
-MODE: {mode_instructions}
-Rules:
-- Return strictly raw SQL. No markdown, no explanation.
-- Handle date comparisons using dialect-specific functions.
-- For {dialect.upper()} syntax only.
-"""
+        system_prompt = build_sql_prompt(dialect, schema_str, safe_mode)
     elif dialect == "mongodb":
         system_prompt = f"""You are a MongoDB Query Expert. You must generate executable MongoDB queries based on the user's natural language question.
 
@@ -645,15 +660,7 @@ def generate_response(req: UserRequest):
     if not schema_str:
         return AnalysisResponse(sql_query="", error="Could not fetch database schema.")
 
-    mode_instructions = "STRICTLY READ-ONLY. SELECT only." if req.safe_mode else "UNRESTRICTED MODE."
-    system_prompt = f"""You are a {dialect.upper()} Expert.
-Schema: {schema_str}
-MODE: {mode_instructions}
-Rules:
-- Return strictly raw query. No markdown.
-- Handle date comparisons using dialect-specific functions.
-"""
-    query_text = ai_service.ai_call(system_prompt, req.query)
+    query_text = ai_service.ai_call(build_sql_prompt(dialect, schema_str, req.safe_mode), req.query)
     if not query_text:
         return AnalysisResponse(sql_query="", error="AI failed to generate query.")
 

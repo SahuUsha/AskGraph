@@ -1335,7 +1335,7 @@
     // ===== EVENT LISTENERS =====
     function initEvents() {
         // Navigation
-        $$('.nav-item').forEach(item => {
+        $$('.nav-item[data-page]').forEach(item => {
             item.addEventListener('click', () => navigateTo(item.dataset.page));
             item.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateTo(item.dataset.page); }

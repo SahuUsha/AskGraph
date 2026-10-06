@@ -11,3 +11,7 @@ services:
         value: 3.11.0
       - key: CACHE_DB_URL
         sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: SAMPLE_DB_URL
+        sync: false

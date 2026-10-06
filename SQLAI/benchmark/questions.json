@@ -1,0 +1,72 @@
+[
+  {
+    "id": 1,
+    "skill": "ratio",
+    "question": "What percentage of customers have placed at least one order? Round to 1 decimal place.",
+    "gold_sql": "SELECT ROUND(100.0 * COUNT(DISTINCT customer_id) / (SELECT COUNT(*) FROM customers), 1) FROM orders",
+    "ordered": false
+  },
+  {
+    "id": 2,
+    "skill": "window: running total",
+    "question": "For each month of 2025 that had orders, show the month number, that month's revenue, and the running total of revenue for the year so far, in month order.",
+    "gold_sql": "SELECT month, revenue, SUM(revenue) OVER (ORDER BY month) FROM (SELECT EXTRACT(MONTH FROM order_date) AS month, SUM(total_price) AS revenue FROM orders WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01' GROUP BY 1) m ORDER BY month",
+    "ordered": true
+  },
+  {
+    "id": 3,
+    "skill": "distinct across joins",
+    "question": "Which customers have ordered products from more than one category? Show the customer name and the number of distinct categories.",
+    "gold_sql": "SELECT c.customer_name, COUNT(DISTINCT p.category) FROM orders o JOIN customers c ON c.customer_id = o.customer_id JOIN products p ON p.product_id = o.product_id GROUP BY c.customer_id, c.customer_name HAVING COUNT(DISTINCT p.category) > 1",
+    "ordered": false
+  },
+  {
+    "id": 4,
+    "skill": "anti-join + date filter",
+    "question": "Which product categories had no sales at all in 2026?",
+    "gold_sql": "SELECT DISTINCT p.category FROM products p WHERE NOT EXISTS (SELECT 1 FROM orders o JOIN products p2 ON p2.product_id = o.product_id WHERE p2.category = p.category AND o.order_date >= DATE '2026-01-01' AND o.order_date < DATE '2027-01-01')",
+    "ordered": false
+  },
+  {
+    "id": 5,
+    "skill": "join + top-N",
+    "question": "What are the 3 largest single orders? Show the customer name, order id and total price, largest first.",
+    "gold_sql": "SELECT c.customer_name, o.order_id, o.total_price FROM orders o JOIN customers c ON c.customer_id = o.customer_id ORDER BY o.total_price DESC LIMIT 3",
+    "ordered": true
+  },
+  {
+    "id": 6,
+    "skill": "day-of-week",
+    "question": "How many orders were placed on a weekend (Saturday or Sunday)?",
+    "gold_sql": "SELECT COUNT(*) FROM orders WHERE EXTRACT(ISODOW FROM order_date) IN (6, 7)",
+    "ordered": false
+  },
+  {
+    "id": 7,
+    "skill": "window: share of total",
+    "question": "What percentage of total revenue does each product category contribute? Round to 2 decimal places and sort from highest to lowest.",
+    "gold_sql": "SELECT category, ROUND(100.0 * revenue / SUM(revenue) OVER (), 2) AS pct FROM (SELECT p.category, SUM(o.total_price) AS revenue FROM orders o JOIN products p ON p.product_id = o.product_id GROUP BY p.category) t ORDER BY revenue DESC",
+    "ordered": true
+  },
+  {
+    "id": 8,
+    "skill": "nested conditions",
+    "question": "How many customers have above-average loyalty points and have spent more than 1000 in total?",
+    "gold_sql": "SELECT COUNT(*) FROM customers c WHERE c.loyalty_points > (SELECT AVG(loyalty_points) FROM customers) AND (SELECT SUM(o.total_price) FROM orders o WHERE o.customer_id = c.customer_id) > 1000",
+    "ordered": false
+  },
+  {
+    "id": 9,
+    "skill": "date formatting",
+    "question": "Which month (formatted as YYYY-MM) had the most orders, and how many orders were there?",
+    "gold_sql": "SELECT TO_CHAR(order_date, 'YYYY-MM'), COUNT(*) FROM orders GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
+    "ordered": false
+  },
+  {
+    "id": 10,
+    "skill": "year-over-year",
+    "question": "By what percentage did the average order value change from 2025 to 2026? Round to 1 decimal place.",
+    "gold_sql": "SELECT ROUND(100.0 * (AVG(total_price) FILTER (WHERE order_date >= DATE '2026-01-01') / AVG(total_price) FILTER (WHERE order_date < DATE '2026-01-01') - 1), 1) FROM orders",
+    "ordered": false
+  }
+]
