@@ -221,9 +221,11 @@
                 </div>
                 <p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">Review the AI-generated migration plan below. You can provide feedback to refine it, then approve to start execution.</p>
 
-                <div class="sql-block" style="max-height:400px;overflow:auto;">
+                <div id="migPlanReadable" style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px;"></div>
+                <details class="sql-block" style="max-height:360px;overflow:auto;">
+                  <summary style="cursor:pointer;font-size:13px;font-weight:600;margin-bottom:8px;">View JSON</summary>
                   <pre id="migPlanOutput" style="white-space:pre-wrap;word-break:break-word;"></pre>
-                </div>
+                </details>
 
                 <!-- HITL Feedback -->
                 <div style="margin-top:20px;">

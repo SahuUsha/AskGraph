@@ -1,9 +1,14 @@
+import os
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# app2 is started from SQLAI/, so a relative ".env" would miss the repo-root file.
+_REPO_ROOT_ENV = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_REPO_ROOT_ENV, extra="ignore")
 
     # Any OpenAI-compatible chat endpoint; defaults to NVIDIA's hosted API.
     NVIDIA_API_KEY: str

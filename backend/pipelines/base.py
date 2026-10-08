@@ -80,7 +80,13 @@ def json_dumps(obj) -> str:
 # ─── SQL Schema Extractor ────────────────────────────────────────────────────
 def extract_sql_schema(connection_url: str) -> Dict[str, Any]:
     """Extract full schema metadata from any SQL database via SQLAlchemy."""
-    engine = create_engine(connection_url)
+    logger.info("extract_sql_schema | connecting")
+    print("[step] extract-schema | reading tables from SQL database", flush=True)
+    engine = create_engine(
+        connection_url,
+        connect_args={"connect_timeout": 10},
+        pool_pre_ping=True,
+    )
     inspector = inspect(engine)
 
     schema_info = {}
@@ -210,7 +216,168 @@ def extract_couch_schema(host: str, username: str, password: str) -> Dict[str, A
     return schema_info
 
 
+def _repair_truncated_json(text: str) -> str:
+    """Close a JSON document that was cut off mid-value."""
+    text = text.rstrip()
+    last_complete = -1
+    in_str = False
+    escape = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+                last_complete = i
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "}]":
+            last_complete = i
+
+    if in_str and last_complete >= 0:
+        text = text[: last_complete + 1]
+
+    text = text.rstrip()
+    text = re.sub(r",\s*$", "", text)
+    text = re.sub(r',?\s*"[^"\\]*"\s*:\s*$', "", text)
+    text = re.sub(r",\s*$", "", text)
+
+    stack = []
+    in_str = False
+    escape = False
+    for ch in text:
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch in "}]" and stack:
+            stack.pop()
+
+    if in_str:
+        text += '"'
+    text += "".join(reversed(stack))
+    return text
+
+
+def parse_model_json(raw: str) -> Dict[str, Any]:
+    """Parse model output, including JSON that was cut off by the token limit."""
+    text = (raw or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text)
+    start = text.find("{")
+    if start < 0:
+        return {"error": "The model did not return a JSON object.", "raw_response": raw}
+
+    body = text[start:]
+    try:
+        plan = json.loads(body)
+        if isinstance(plan, dict):
+            return plan
+    except json.JSONDecodeError:
+        pass
+
+    repaired = _repair_truncated_json(body)
+    try:
+        plan = json.loads(repaired)
+    except json.JSONDecodeError as exc:
+        return {
+            "error": f"Could not parse the model JSON ({exc}).",
+            "raw_response": raw,
+        }
+
+    if not isinstance(plan, dict):
+        return {"error": "The model JSON was not an object.", "raw_response": raw}
+
+    items = plan.get("collections") or plan.get("tables") or []
+    plan["_warning"] = (
+        f"The model response was cut off. Recovered {len(items)} table"
+        f"{'' if len(items) == 1 else 's'}. Generate the plan again if a table is missing."
+    )
+    print(f"[step] generate-plan | repaired truncated JSON | tables={len(items)}", flush=True)
+    return plan
+
+
 # ─── AI Plan Generator ───────────────────────────────────────────────────────
+def validate_migration_plan(plan: Dict[str, Any]) -> List[str]:
+    """Return problems that would make the plan unsafe to show or execute."""
+    issues: List[str] = []
+    if not isinstance(plan, dict):
+        return ["Plan is not a JSON object."]
+    if plan.get("error"):
+        issues.append(str(plan["error"]))
+    if plan.get("_warning"):
+        issues.append(str(plan["_warning"]))
+
+    items = plan.get("collections")
+    if items is None:
+        items = plan.get("tables")
+    if not isinstance(items, list) or not items:
+        issues.append('Plan must contain a non-empty "collections" or "tables" list.')
+        return issues
+
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            issues.append(f"Item {index} is not an object.")
+            continue
+        source = item.get("source")
+        target = item.get("target")
+        label = source or f"item {index}"
+        if not source or not target:
+            issues.append(f"{label} is missing source or target.")
+        mappings = item.get("field_mappings")
+        if not isinstance(mappings, list) or not mappings:
+            issues.append(f"{label} has no field_mappings.")
+            continue
+        for mapping in mappings:
+            if not isinstance(mapping, dict):
+                issues.append(f"{label} has a field mapping that is not an object.")
+                continue
+            if not (mapping.get("source_field") or mapping.get("source")):
+                issues.append(f"{label} has a mapping without source_field.")
+            if not (mapping.get("target_field") or mapping.get("target")):
+                issues.append(f"{label} has a mapping without target_field.")
+    return issues
+
+
+def _collect_model_text(client: OpenAI, messages: List[Dict[str, str]]) -> str:
+    """Call the model, and once more if the answer is cut off by the token limit."""
+    parts: List[str] = []
+    for _ in range(2):
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            temperature=0.2,
+            top_p=1,
+            max_tokens=8192,
+        )
+        piece = response.choices[0].message.content or ""
+        finish = getattr(response.choices[0], "finish_reason", None)
+        parts.append(piece)
+        print(f"[step] generate-plan | model response received | finish={finish} | chars={len(piece)}", flush=True)
+        if finish != "length":
+            break
+        print("[step] generate-plan | output hit the token limit, asking the model to continue", flush=True)
+        messages.append({"role": "assistant", "content": piece})
+        messages.append({
+            "role": "user",
+            "content": "The JSON was cut off. Continue from the exact stopping point. Do not repeat earlier text. Do not use markdown.",
+        })
+    return "".join(parts).strip()
+
+
 def generate_migration_plan(
     source_type: str,
     target_type: str,
@@ -218,7 +385,8 @@ def generate_migration_plan(
     feedback: Optional[str] = None,
     existing_plan: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Use Azure OpenAI to generate a migration plan."""
+    """Ask the configured NVIDIA model for a migration plan."""
+    print(f"[step] generate-plan | model call | {source_type} -> {target_type}", flush=True)
     client = get_ai_client()
 
     system_prompt = f"""You are a database migration architect.
@@ -232,10 +400,10 @@ Each item should have:
 - "target": the target table/collection name
 - "field_mappings": a list of {{ "source_field", "target_field", "type", "notes" }}
 - "strategy": one of "flat", "embed", "reference", "normalize", "denormalize"
-- "notes": any relevant migration notes
-- "embedding": (if NoSQL target) describes how to embed related data
+- "notes": one short sentence, or ""
+- "embedding": omit this key unless related rows should be nested
 
-Return ONLY valid JSON. No markdown, no explanation.
+Keep the JSON compact. Include every source table. Return ONLY valid JSON. No markdown.
 """
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -251,28 +419,35 @@ Return ONLY valid JSON. No markdown, no explanation.
             "content": f"Source {source_type} schema:\n\n{schema_text}\n\nGenerate the migration plan to {target_type}. Return ONLY valid JSON.",
         })
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        temperature=0.2,
-        top_p=1,
-        max_tokens=4096,
-    )
+    last_issues: List[str] = ["The model did not return a plan."]
+    for attempt in range(1, 4):
+        raw = _collect_model_text(client, messages)
+        plan = parse_model_json(raw)
+        last_issues = validate_migration_plan(plan)
+        table_count = len((plan.get("collections") or plan.get("tables") or [])) if isinstance(plan, dict) else 0
+        if not last_issues:
+            plan.pop("_warning", None)
+            plan.pop("raw_response", None)
+            plan.pop("error", None)
+            print(f"[step] generate-plan | validated | attempt={attempt} | tables={table_count}", flush=True)
+            return plan
 
-    raw = (response.choices[0].message.content or "").strip()
+        print(f"[step] generate-plan | rejected | attempt={attempt} | issues={len(last_issues)}", flush=True)
+        for issue in last_issues:
+            print(f"[step] generate-plan | issue | {issue}", flush=True)
+        if attempt == 3:
+            break
+        messages.append({"role": "assistant", "content": raw})
+        issues_text = "\n".join(f"- {issue}" for issue in last_issues)
+        messages.append({
+            "role": "user",
+            "content": (
+                "This plan failed review. Fix every issue and return the full corrected JSON only.\n"
+                f"{issues_text}"
+            ),
+        })
 
-    # Try to parse JSON from the response
-    # Strip markdown fences if present
-    if raw.startswith("```"):
-        raw = re.sub(r"^```(?:json)?\s*", "", raw)
-        raw = re.sub(r"\s*```$", "", raw)
-
-    try:
-        plan = json.loads(raw)
-    except json.JSONDecodeError:
-        plan = {"raw_response": raw, "error": "Failed to parse AI response as JSON"}
-
-    return plan
+    raise ValueError("Migration plan was still invalid after 3 reviews: " + "; ".join(last_issues))
 
 
 # ─── Base Pipeline Class ─────────────────────────────────────────────────────

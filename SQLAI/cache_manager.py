@@ -8,7 +8,7 @@ class CacheManager:
 
     def init_cache_db(self):
         try:
-            conn = psycopg2.connect(self.cache_db_url)
+            conn = psycopg2.connect(self.cache_db_url, connect_timeout=10)
             cur = conn.cursor()
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS schema_cache (
@@ -32,7 +32,7 @@ class CacheManager:
 
     def get_cached_schema(self, db_hash: str):
         try:
-            conn = psycopg2.connect(self.cache_db_url)
+            conn = psycopg2.connect(self.cache_db_url, connect_timeout=10)
             cur = conn.cursor()
             cur.execute("SELECT schema_text, context_text, dialect FROM schema_cache WHERE db_hash = %s", (db_hash,))
             result = cur.fetchone()
@@ -46,7 +46,7 @@ class CacheManager:
 
     def save_cached_schema(self, db_hash: str, schema_text: str, context_text: str, dialect: str):
         try:
-            conn = psycopg2.connect(self.cache_db_url)
+            conn = psycopg2.connect(self.cache_db_url, connect_timeout=10)
             cur = conn.cursor()
             cur.execute("""
                 INSERT INTO schema_cache (db_hash, schema_text, context_text, dialect)

@@ -151,6 +151,7 @@
         migBackTo2: $('#migBackTo2'),
         migBackTo3: $('#migBackTo3'),
         migPlanOutput: $('#migPlanOutput'),
+        migPlanReadable: $('#migPlanReadable'),
         migFeedbackInput: $('#migFeedbackInput'),
         migUpdatePlanBtn: $('#migUpdatePlanBtn'),
         migApproveBtn: $('#migApproveBtn'),
@@ -581,6 +582,58 @@
         dom.migSchemaDisplay.innerHTML = html;
     }
 
+    function renderMigrationPlan(plan) {
+        const items = (plan && (plan.collections || plan.tables)) || [];
+        let html = '';
+
+        if (plan && plan._warning) {
+            html += `<div style="padding:12px 14px;border-radius:8px;background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.45);color:#facc15;font-size:13px;">${escapeHtml(plan._warning)}</div>`;
+        }
+        if (plan && plan.error) {
+            html += `<div style="padding:12px 14px;border-radius:8px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.4);color:#fca5a5;font-size:13px;">${escapeHtml(plan.error)}</div>`;
+        }
+
+        if (!items.length && plan && plan.raw_response) {
+            html += `<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;">${escapeHtml(plan.raw_response)}</pre>`;
+        }
+
+        items.forEach((item) => {
+            const mappings = item.field_mappings || [];
+            html += `<div class="card card-flat" style="padding:16px;border:1px solid var(--border-primary);">`;
+            html += `<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px;">`;
+            html += `<h4 style="margin:0;font-size:14px;">${escapeHtml(item.source || '?')} → ${escapeHtml(item.target || '?')}</h4>`;
+            html += `<span style="font-size:11px;padding:3px 8px;border-radius:999px;background:var(--bg-tertiary);">${escapeHtml(item.strategy || 'flat')}</span>`;
+            html += `</div>`;
+            if (item.notes) {
+                html += `<p style="margin:0 0 10px;color:var(--text-secondary);font-size:12px;">${escapeHtml(item.notes)}</p>`;
+            }
+            if (mappings.length) {
+                html += `<table style="width:100%;border-collapse:collapse;font-size:12px;">`;
+                html += `<thead><tr style="text-align:left;color:var(--text-tertiary);"><th style="padding:4px 6px;">Source</th><th style="padding:4px 6px;">Target</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Notes</th></tr></thead><tbody>`;
+                mappings.forEach((field) => {
+                    html += `<tr>`;
+                    html += `<td style="padding:4px 6px;font-family:var(--font-mono);">${escapeHtml(field.source_field || field.source || '')}</td>`;
+                    html += `<td style="padding:4px 6px;font-family:var(--font-mono);">${escapeHtml(field.target_field || field.target || '')}</td>`;
+                    html += `<td style="padding:4px 6px;">${escapeHtml(field.type || '')}</td>`;
+                    html += `<td style="padding:4px 6px;color:var(--text-secondary);">${escapeHtml(field.notes || '')}</td>`;
+                    html += `</tr>`;
+                });
+                html += `</tbody></table>`;
+            }
+            if (item.embedding) {
+                html += `<p style="margin:10px 0 0;font-size:12px;color:var(--text-secondary);"><strong>Embedding:</strong> ${escapeHtml(typeof item.embedding === 'string' ? item.embedding : JSON.stringify(item.embedding))}</p>`;
+            }
+            html += `</div>`;
+        });
+
+        if (dom.migPlanReadable) dom.migPlanReadable.innerHTML = html || '<p style="color:var(--text-tertiary);">No tables in this plan.</p>';
+        if (dom.migPlanOutput) {
+            const shown = Object.assign({}, plan || {});
+            delete shown.raw_response;
+            dom.migPlanOutput.textContent = JSON.stringify(shown, null, 2);
+        }
+    }
+
     async function generateMigPlan() {
         const p = state.selectedPipeline;
         if (!p || !state.migExtractedSchema) return;
@@ -597,14 +650,18 @@
 
             state.migSessionId = planData.session_id;
             state.migPlan = planData.plan;
-
-            dom.migPlanOutput.textContent = JSON.stringify(planData.plan, null, 2);
+            renderMigrationPlan(planData.plan);
 
             if (dom.migPlanLoading) dom.migPlanLoading.classList.remove('show');
             if (dom.migGenPlanBtn) dom.migGenPlanBtn.disabled = false;
 
             setMigStep(4);
-            showToast('AI migration plan generated! Review it below.', 'success');
+            showToast(
+                planData.plan && planData.plan._warning
+                    ? 'Plan recovered from a cut-off response. Review the warning.'
+                    : 'AI migration plan generated! Review it below.',
+                planData.plan && planData.plan._warning ? 'warning' : 'success'
+            );
         } catch (err) {
             if (dom.migPlanLoading) dom.migPlanLoading.classList.remove('show');
             if (dom.migGenPlanBtn) dom.migGenPlanBtn.disabled = false;
@@ -627,7 +684,7 @@
                 feedback: feedback,
             });
             state.migPlan = data.plan;
-            dom.migPlanOutput.textContent = JSON.stringify(data.plan, null, 2);
+            renderMigrationPlan(data.plan);
             dom.migFeedbackInput.value = '';
             showToast('Plan updated based on your feedback!', 'success');
         } catch (err) {
@@ -669,12 +726,14 @@
 
                 if (data.status === 'running') {
                     const prog = data.progress || {};
-                    const current = prog.current || 0;
-                    const total = prog.total || 1;
+                    const current = Number(prog.current || 0);
+                    const total = Number(prog.total || 0);
                     const pct = total > 0 ? Math.round((current / total) * 100) : 0;
                     dom.migProgressBar.style.width = `${pct}%`;
-                    dom.migProgressText.textContent = `Migrating… ${current} / ${total} tables`;
-                    dom.migProgressDetail.textContent = prog.current_table ? `Current: ${prog.current_table}` : '';
+                    dom.migProgressText.textContent = total
+                        ? `Migrating… ${current} / ${total} tables`
+                        : 'Preparing migration…';
+                    dom.migProgressDetail.textContent = prog.current_table || 'Waiting for the first table';
                 } else if (data.status === 'completed') {
                     clearInterval(intervalId);
                     showMigrationResult(data, true);
@@ -693,13 +752,13 @@
         dom.migProgressArea.style.display = 'none';
         dom.migResultArea.style.display = 'block';
 
-        if (success) {
+        const result = data.result || {};
+        const errors = result.errors || [];
+        if (success && errors.length === 0) {
             dom.migResultIcon.textContent = '✅';
             dom.migResultTitle.textContent = 'Migration Completed Successfully!';
-            const result = data.result || {};
             const tables = result.tables_migrated || [];
             const totalRows = result.total_rows || 0;
-            const errors = result.errors || [];
 
             let html = `
                 <div style="display:flex;gap:24px;justify-content:center;margin-bottom:16px;">

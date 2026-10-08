@@ -50,8 +50,14 @@ health_checker = HealthChecker(db_manager=db_manager)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    cache_manager.init_cache_db()
-    yield
+    import asyncio
+
+    # Same reason as SQLAI: do not hold the port closed while Neon connects.
+    cache_task = asyncio.create_task(asyncio.to_thread(cache_manager.init_cache_db))
+    try:
+        yield
+    finally:
+        cache_task.cancel()
 
 
 app = FastAPI(title="Multi-DB SQL Agent", lifespan=lifespan)

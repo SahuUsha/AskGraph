@@ -5,6 +5,7 @@ Migration runs FIRST, then dual-DB AI exploration kicks in.
 """
 
 import os
+import re
 import sys
 import json
 import math
@@ -14,6 +15,7 @@ import tempfile
 import io
 import traceback
 from datetime import datetime
+from urllib.parse import urlparse
 
 import pandas as pd
 from typing import List, Optional, Dict, Any
@@ -61,6 +63,27 @@ from pipelines.couchdb_to_mysql import CouchDBToMySQLPipeline
 from pipelines.couchdb_to_postgres import CouchDBToPostgresPipeline
 
 migration_logger = get_pipeline_logger("SQLAI.Migration")
+_SECRET_IN_URL = re.compile(r"://[^/@\s]*:[^/@\s]*@")
+
+
+def _redact(value: Any) -> str:
+    return _SECRET_IN_URL.sub("://***:***@", str(value))
+
+
+def _db_host(url: Optional[str]) -> str:
+    if not url:
+        return "(none)"
+    try:
+        return urlparse(url).hostname or "(unknown host)"
+    except Exception:
+        return "(unparsed)"
+
+
+def _step(step: str, detail: str) -> None:
+    """Print every migration step to the terminal, even when uvicorn buffers logs."""
+    line = f"[step] {step} | {detail}"
+    print(line, flush=True)
+    migration_logger.info(line)
 
 # --- Pipeline Registry ---
 MIGRATION_PIPELINES = {
@@ -104,15 +127,23 @@ askgraph_app = _load_askgraph()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        cache_manager.init_cache_db()
-    except Exception as e:
-        print(f"[WARN] Cache init skipped: {e}")
+    import asyncio
+
+    # Neon can take a long time to accept a connection. Uvicorn does not open
+    # the port until this lifespan yields, so cache setup must not block it.
+    async def _sqlai_cache():
+        try:
+            await asyncio.to_thread(cache_manager.init_cache_db)
+        except Exception as e:
+            print(f"[WARN] Cache init skipped: {e}")
+
+    cache_task = asyncio.create_task(_sqlai_cache())
     # Starlette doesn't run lifespans of mounted sub-apps, so run AskGraph's here.
     async with AsyncExitStack() as stack:
         if askgraph_app:
             await stack.enter_async_context(askgraph_app.router.lifespan_context(askgraph_app))
         yield
+    cache_task.cancel()
 
 
 app = FastAPI(title="QueryVista SQLAI — Dual-DB Agent", lifespan=lifespan)
@@ -847,51 +878,56 @@ def list_migration_pipelines():
 
 @app.post("/api/test-connection")
 def test_migration_connection(req: MigrationTestConnectionRequest):
-    """Test database connection."""
+    """Test database connection. Always returns JSON; a bad URL must not stop the server."""
     db_type = req.db_type.lower()
-    migration_logger.info(f"Testing connection to {db_type}...")
+    host = _db_host(req.connection_url or req.host)
+    _step("test-connection", f"start | db={db_type} | host={host}")
 
-    config = {}
-    if req.connection_url:
-        config["connection_url"] = req.connection_url
-    if req.host:
-        config["host"] = req.host
-    if req.username:
-        config["username"] = req.username
-    if req.password:
-        config["password"] = req.password
-    if req.database:
-        config["database"] = req.database
-
-    for key, pipe in MIGRATION_PIPELINES.items():
-        if pipe.source_type == db_type:
-            return pipe.test_source_connection(config)
-        if pipe.target_type == db_type:
-            return pipe.test_target_connection(config)
-
-    # Fallback
     try:
         if db_type in ("mysql", "postgresql"):
+            if not req.connection_url:
+                _step("test-connection", "failed | connection URL is empty")
+                return {"success": False, "message": "Connection URL is required"}
+            _step("test-connection", f"connecting | db={db_type} | host={host} | timeout=10s")
             from sqlalchemy import create_engine
-            engine = create_engine(config["connection_url"])
+            engine = create_engine(
+                req.connection_url,
+                connect_args={"connect_timeout": 10},
+                pool_pre_ping=True,
+            )
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             engine.dispose()
+            _step("test-connection", f"ok | db={db_type} | host={host}")
             return {"success": True, "message": f"{db_type} connection successful"}
-        elif db_type == "mongodb":
+        if db_type == "mongodb":
+            if not req.connection_url:
+                _step("test-connection", "failed | MongoDB URL is empty")
+                return {"success": False, "message": "MongoDB URL is required"}
+            _step("test-connection", f"connecting | db=mongodb | host={host} | timeout=5s")
             import pymongo
-            client = pymongo.MongoClient(config["connection_url"], serverSelectionTimeoutMS=5000)
+            client = pymongo.MongoClient(req.connection_url, serverSelectionTimeoutMS=5000)
             client.admin.command("ping")
             client.close()
+            _step("test-connection", f"ok | db=mongodb | host={host}")
             return {"success": True, "message": "MongoDB connection successful"}
-        elif db_type == "couchdb":
+        if db_type == "couchdb":
+            _step("test-connection", f"connecting | db=couchdb | host={req.host or host}")
             import httpx
-            r = httpx.get(f"{config['host']}/", auth=(config["username"], config["password"]), timeout=10)
-            r.raise_for_status()
+            response = httpx.get(
+                f"{req.host}/",
+                auth=(req.username or "", req.password or ""),
+                timeout=10,
+            )
+            response.raise_for_status()
+            _step("test-connection", f"ok | db=couchdb | host={req.host}")
             return {"success": True, "message": "CouchDB connection successful"}
     except Exception as e:
-        return {"success": False, "message": str(e)}
+        message = _redact(e)
+        _step("test-connection", f"failed | db={db_type} | host={host} | {message}")
+        return {"success": False, "message": message}
 
+    _step("test-connection", f"failed | unsupported db={db_type}")
     raise HTTPException(status_code=400, detail=f"Unsupported: {db_type}")
 
 
@@ -899,7 +935,7 @@ def test_migration_connection(req: MigrationTestConnectionRequest):
 def extract_migration_schema(req: MigrationExtractSchemaRequest):
     """Extract schema from source database."""
     db_type = req.db_type.lower()
-    migration_logger.info(f"Extracting schema for {db_type}...")
+    _step("extract-schema", f"start | db={db_type} | host={_db_host(req.connection_url or req.host)}")
 
     try:
         if db_type in ("mysql", "postgresql"):
@@ -921,7 +957,7 @@ def extract_migration_schema(req: MigrationExtractSchemaRequest):
             "created_at": datetime.now().isoformat(),
         }
 
-        migration_logger.info(f"Schema extracted. {len(schema)} entities. Session: {session_id}")
+        _step("extract-schema", f"ok | entities={len(schema)} | session={session_id}")
 
         return {
             "success": True,
@@ -933,8 +969,8 @@ def extract_migration_schema(req: MigrationExtractSchemaRequest):
     except HTTPException:
         raise
     except Exception as e:
-        migration_logger.error(f"Schema extraction failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        _step("extract-schema", f"failed | {_redact(e)}")
+        raise HTTPException(status_code=500, detail=_redact(e))
 
 
 @app.post("/api/generate-plan")
@@ -948,8 +984,9 @@ def gen_migration_plan(req: MigrationGeneratePlanRequest):
         if not schema_text:
             raise HTTPException(status_code=400, detail="Provide schema_data or schema_text")
 
-        migration_logger.info(f"Generating AI plan for {req.source_type} → {req.target_type}...")
+        _step("generate-plan", f"start | {req.source_type} -> {req.target_type} | calling NVIDIA")
         plan = generate_migration_plan(req.source_type, req.target_type, schema_text)
+        _step("generate-plan", f"ok | session will be created | keys={list(plan.keys()) if isinstance(plan, dict) else type(plan).__name__}")
 
         session_id = str(uuid.uuid4())
         migration_sessions[session_id] = {
@@ -966,7 +1003,8 @@ def gen_migration_plan(req: MigrationGeneratePlanRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _step("generate-plan", f"failed | {_redact(e)}")
+        raise HTTPException(status_code=500, detail=_redact(e))
 
 
 @app.post("/api/update-plan")
@@ -977,6 +1015,7 @@ def update_migration_plan(req: MigrationUpdatePlanRequest):
         raise HTTPException(status_code=404, detail="Session not found")
 
     try:
+        _step("update-plan", f"start | session={req.session_id}")
         existing_plan = pipeline_json_dumps(session["plan"])
         schema_text = session.get("schema_text", "")
 
@@ -989,9 +1028,11 @@ def update_migration_plan(req: MigrationUpdatePlanRequest):
         )
 
         session["plan"] = updated
+        _step("update-plan", f"ok | session={req.session_id}")
         return {"success": True, "plan": updated}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _step("update-plan", f"failed | {_redact(e)}")
+        raise HTTPException(status_code=500, detail=_redact(e))
 
 
 @app.post("/api/approve-plan")
@@ -1002,6 +1043,7 @@ def approve_migration_plan(req: MigrationApprovePlanRequest):
         raise HTTPException(status_code=404, detail="Session not found")
 
     session["approved"] = True
+    _step("approve-plan", f"ok | session={req.session_id}")
     return {"success": True, "message": "Plan approved. Ready to execute."}
 
 
@@ -1025,12 +1067,18 @@ def execute_migration(req: MigrationExecuteRequest, bg: BackgroundTasks):
 
     migration_id = str(uuid.uuid4())
     session["migration_id"] = migration_id
+    planned = (session.get("plan") or {}).get("collections") or (session.get("plan") or {}).get("tables") or []
     session["status"] = "running"
-    session["progress"] = {"current": 0, "total": 0, "current_table": ""}
+    session["progress"] = {
+        "current": 0,
+        "total": len(planned),
+        "current_table": "Starting migration",
+        "rows_copied": 0,
+    }
     session["source_config"] = req.source_config
     session["target_config"] = req.target_config
 
-    migration_logger.info(f"[{migration_id}] Starting {pipeline_key} migration...")
+    _step("execute", f"start | id={migration_id} | pipeline={pipeline_key}")
 
     def run_migration():
         try:
@@ -1039,39 +1087,41 @@ def execute_migration(req: MigrationExecuteRequest, bg: BackgroundTasks):
                     "current": current,
                     "total": total,
                     "current_table": table,
+                    "rows_copied": session.get("progress", {}).get("rows_copied", 0),
                 }
-                migration_logger.info(f"[{migration_id}] ({current}/{total}) Migrated: {table}")
+                _step("execute", f"progress | id={migration_id} | {current}/{total} | {table}")
 
-            try:
-                from backend.pipelines.dynamic_executor import execute_dynamic_migration
-                migration_logger.info(f"[{migration_id}] Attempting dynamic LLM-generated script execution...")
-                result = execute_dynamic_migration(
-                    source_type=source_type,
-                    target_type=target_type,
-                    source_config=req.source_config,
-                    target_config=req.target_config,
-                    plan=session["plan"],
-                    on_progress=on_progress,
+            _step("execute", f"copying rows | id={migration_id} | pipeline={pipeline_key}")
+            result = pipeline.execute(
+                req.source_config, req.target_config, session["plan"],
+                on_progress=on_progress,
+            )
+            errors = result.get("errors") or []
+            copied = result.get("total_rows") or 0
+            table_count = len(result.get("tables_migrated") or [])
+            if errors:
+                session["status"] = "failed"
+                session["error"] = "; ".join(
+                    f"{item.get('table')}: {item.get('error')}" for item in errors
                 )
-            except Exception as dyn_e:
-                migration_logger.warning(f"[{migration_id}] Dynamic script execution failed: {dyn_e}. Falling back to standard pipeline...")
-                result = pipeline.execute(
-                    req.source_config, req.target_config, session["plan"],
-                    on_progress=on_progress,
-                )
-            session["status"] = "completed"
-            session["result"] = result
+                session["result"] = result
+                history_status = "failed"
+                _step("execute", f"failed | id={migration_id} | tables={table_count} | rows={copied} | errors={len(errors)}")
+            else:
+                session["status"] = "completed"
+                session["result"] = result
+                history_status = "completed"
+                _step("execute", f"ok | id={migration_id} | tables={table_count} | rows={copied}")
 
             migration_history.append({
                 "id": migration_id,
                 "pipeline": pipeline_key,
                 "source_type": source_type,
                 "target_type": target_type,
-                "status": "completed",
+                "status": history_status,
                 "result": result,
                 "completed_at": datetime.now().isoformat(),
             })
-            migration_logger.info(f"[{migration_id}] Migration completed!")
         except Exception as e:
             session["status"] = "failed"
             session["error"] = str(e)
@@ -1083,7 +1133,7 @@ def execute_migration(req: MigrationExecuteRequest, bg: BackgroundTasks):
                 "error": str(e),
                 "completed_at": datetime.now().isoformat(),
             })
-            migration_logger.error(f"[{migration_id}] Migration failed: {e}")
+            _step("execute", f"failed | id={migration_id} | {_redact(e)}")
 
     bg.add_task(run_migration)
 
