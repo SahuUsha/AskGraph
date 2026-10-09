@@ -575,13 +575,16 @@ def get_table_data_dual(req: DualTableDetailRequest):
     else:
         try:
             existing_tables = db_manager.get_tables(req.db_url)
-            if table_name not in existing_tables:
+            # Perform a case‑insensitive match because PostgreSQL stores unquoted identifiers in lower‑case.
+            # Preserve the original name for quoting later.
+            if table_name not in existing_tables and table_name.lower() not in [t.lower() for t in existing_tables]:
                 raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")
 
             engine = db_manager.get_engine(req.db_url)
             dl = dialect.lower()
 
-            count_sql = f"SELECT COUNT(*) FROM {table_name}"
+            # Quote the identifier to respect case‑sensitive names (e.g., "Resume").
+            count_sql = f"SELECT COUNT(*) FROM \"{table_name}\""
             with engine.connect() as conn:
                 total_rows = conn.execute(text(count_sql)).scalar()
                 req.page = max(1, req.page)
@@ -649,24 +652,25 @@ def get_table_data(table_name: str, req: PaginationRequest):
     else:
         try:
             existing_tables = db_manager.get_tables(req.db_url)
-            if table_name not in existing_tables:
+            # Perform a case‑insensitive match; preserve original name for quoting.
+            if table_name not in existing_tables and table_name.lower() not in [t.lower() for t in existing_tables]:
                 raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")
 
             engine = db_manager.get_engine(req.db_url)
             dl = dialect.lower()
 
             with engine.connect() as conn:
-                total_rows = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+                total_rows = conn.execute(text(f"SELECT COUNT(*) FROM \"{table_name}\"")).scalar()
                 req.page = max(1, req.page)
                 offset = (req.page - 1) * req.limit
                 total_pages = math.ceil(total_rows / req.limit) if total_rows > 0 else 1
 
                 if "mssql" in dl or "sqlserver" in dl:
-                    data_sql = f"SELECT * FROM {table_name} ORDER BY (SELECT NULL) OFFSET {offset} ROWS FETCH NEXT {req.limit} ROWS ONLY"
+                    data_sql = f"SELECT * FROM \"{table_name}\" ORDER BY (SELECT NULL) OFFSET {offset} ROWS FETCH NEXT {req.limit} ROWS ONLY"
                 elif "oracle" in dl:
-                    data_sql = f"SELECT * FROM {table_name} OFFSET {offset} ROWS FETCH NEXT {req.limit} ROWS ONLY"
+                    data_sql = f"SELECT * FROM \"{table_name}\" OFFSET {offset} ROWS FETCH NEXT {req.limit} ROWS ONLY"
                 else:
-                    data_sql = f"SELECT * FROM {table_name} LIMIT {req.limit} OFFSET {offset}"
+                    data_sql = f"SELECT * FROM \"{table_name}\" LIMIT {req.limit} OFFSET {offset}"
 
                 df = pd.read_sql(text(data_sql), conn)
                 data_json = json.loads(df.to_json(orient="records", date_format="iso"))
